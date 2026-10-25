@@ -143,11 +143,10 @@ def style_fig(fig, height=330):
 # ---------------- sidebar ----------------
 st.sidebar.markdown('<div style="font-size:22px;font-weight:700;">ReviewPulse</div>'
                     '<div style="font-size:13px;">Swiggy app reviews</div><br>', unsafe_allow_html=True)
-page = st.sidebar.radio("Go to", ["Overview", "Category detail", "Review explorer", "About this data"],
+page = st.sidebar.radio("Go to", ["Overview", "Category detail", "Review explorer", "Live demo", "About this data"],
                         label_visibility="collapsed")
 st.sidebar.markdown("<br><br><div style='font-size:12px;'>Reads English, Hinglish and Hindi reviews</div>",
                     unsafe_allow_html=True)
-
 
 # ---------------- page 1: overview ----------------
 def overview():
@@ -724,6 +723,21 @@ def about():
         ])
         st.markdown(card_html(h), unsafe_allow_html=True)
 
+# ---------------- page 5: live demo ----------------
+DEMO_URL = "https://yashwishah-reviewpulse-demo.hf.space"
+
+
+def live_demo():
+    import streamlit.components.v1 as components
+    st.markdown('<div class="small">Swiggy app · try it yourself</div>'
+                '<h1 style="margin:0;padding:0;">Live demo</h1>', unsafe_allow_html=True)
+    st.markdown('<div class="small">Type a review in English, Hinglish or Hindi and watch it go through the same '
+                'cleaning, language, sentiment and topic steps. The first load can take a minute while the demo wakes up.</div>',
+                unsafe_allow_html=True)
+    st.markdown(f'<a href="{DEMO_URL}" target="_blank" style="display:inline-block;padding:8px 16px;'
+                'margin:8px 0 12px 0;background:#2563eb;color:#ffffff;border-radius:8px;text-decoration:none;'
+                'font-weight:600;font-size:14px;">Open the demo in a new tab ↗</a>', unsafe_allow_html=True)
+    components.iframe(DEMO_URL + "/?__theme=light", height=1000, scrolling=True)
 
 # ---------------- routing ----------------
 if page == "Overview":
@@ -732,5 +746,7 @@ elif page == "Category detail":
     category_detail()
 elif page == "Review explorer":
     review_explorer()
+elif page == "Live demo":
+    live_demo()
 else:
     about()
