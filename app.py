@@ -462,7 +462,10 @@ def review_explorer():
             lang = st.radio("Language", ["All", "English", "Hinglish", "Hindi"], horizontal=True, key="ex_lang")
         c3, c4 = st.columns(2)
         with c3:
-            cat_opts = ["All categories"] + sorted(s["aspect"].dropna().unique().tolist())
+            present = s["aspect"].dropna().unique().tolist()
+            complaint_cats = sorted([c for c in CATS if c in present], key=nice)      # the 6 complaint groups, A to Z
+            other_cats = sorted([c for c in present if c not in CATS], key=nice)    # praise, unclear, etc. at the end
+            cat_opts = ["All categories"] + complaint_cats + other_cats
             cat = st.selectbox("Category", cat_opts, key="ex_cat", format_func=nice)
         with c4:
             order = st.selectbox("Sort", ["Newest first", "Oldest first", "Lowest rating first", "Highest rating first"],
