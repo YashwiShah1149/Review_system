@@ -77,11 +77,15 @@ def load_phrases():
     for version in ("v4", "v3"):
         path = f"data/category_phrases_{version}.csv"
         if os.path.exists(path):
-            p = pd.read_csv(path)
-            p["week_start"] = pd.to_datetime(p["week_start"])
-            return p, version
+            return _read_phrases(path, os.path.getmtime(path)), version
     return None, None
 
+
+@st.cache_data
+def _read_phrases(path, _mtime_key):
+    p = pd.read_csv(path)
+    p["week_start"] = pd.to_datetime(p["week_start"])
+    return p
 
 @st.cache_data
 def load_sample():
