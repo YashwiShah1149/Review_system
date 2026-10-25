@@ -10,13 +10,22 @@ st.set_page_config(page_title="ReviewPulse", page_icon="📊", layout="wide")
 
 CATS = ["Refunds, cancellations & order problems", "App problems & general complaints",
         "Customer service & support", "Delivery", "Pricing & charges", "Food quality"]
-SHORT = {"Refunds & orders": CATS[0], "App problems": CATS[1], "Support": CATS[2],
+# The data keeps the original cluster name; the app shows a name that matches what the reviews say.
+DISPLAY = {CATS[1]: "General complaints & switching apps"}
+
+
+def nice(c):
+    return DISPLAY.get(c, c)
+
+
+SHORT = {"Refunds & orders": CATS[0], "General & switching": CATS[1], "Support": CATS[2],
          "Delivery": CATS[3], "Pricing": CATS[4], "Food": CATS[5]}
 CAT_INFO = {
     CATS[0]: "Refunds not received, cancelled orders, wrong or missing items.",
-    CATS[1]: "Mostly general anger at the app and people saying they will switch to Zomato or other apps, plus "
-             "some complaints about the AI chat bot and a few about bugs, login or payment. Its phrases show it is "
-             "more a 'general complaints' group than a technical one.",
+    CATS[1]: "Angry reviews that do not point at one specific problem (worst food, worst delivery, worst "
+             "application) and people saying they will stop using Swiggy or switch to Zomato. A few mention the AI "
+             "chat bot, bugs, login or payment. The topic model first called this group App problems, but its "
+             "phrases show it is really general dissatisfaction and switching, so it was renamed here.",
     CATS[2]: "Complaints about customer care and support.",
     CATS[3]: "Late or slow delivery, delivery partner issues.",
     CATS[4]: "High prices, extra charges, offers and coupons not working.",
@@ -240,7 +249,7 @@ def overview():
         for name, cnt, old, ch in rows:
             share = cnt / tot_c * 100 if tot_c else 0
             ch_txt, ch_col = change_cell(ch, old)
-            h += (f'<div class="row"><div style="width:38%;"><b style="color:#111827;">{name.replace("&", "&amp;")}</b>'
+            h += (f'<div class="row"><div style="width:38%;"><b style="color:#111827;">{nice(name).replace("&", "&amp;")}</b>'
                   f'<div class="small">{cnt:,} complaints</div></div>'
                   f'<div class="barbg"><div class="bar" style="width:{share:.1f}%;background:#2563eb;"></div></div>'
                   f'<div style="width:44px;text-align:right;font-size:14px;font-weight:600;color:#111827;">{share:.0f}%</div>'
@@ -270,14 +279,14 @@ def overview():
     if big:
         w = max(big, key=lambda r: r[3])
         if w[3] >= 15:
-            items.append(("Needs attention", "pill-red", f"{w[0]} complaints are rising",
+            items.append(("Needs attention", "pill-red", f"{nice(w[0])} complaints are rising",
                           f"Up {w[3]:.0f}% ({w[2]:,} to {w[1]:,} complaints) vs the previous 4 weeks."))
         elif w[3] >= 5:
-            items.append(("Watch", "pill-yellow", f"{w[0]} complaints are creeping up",
+            items.append(("Watch", "pill-yellow", f"{nice(w[0])} complaints are creeping up",
                           f"Up {w[3]:.0f}% ({w[2]:,} to {w[1]:,} complaints) vs the previous 4 weeks."))
         b = min(big, key=lambda r: r[3])
         if b[3] <= -10:
-            items.append(("Healthy", "pill-green", f"{b[0]} complaints are falling",
+            items.append(("Healthy", "pill-green", f"{nice(b[0])} complaints are falling",
                           f"Down {abs(b[3]):.0f}% ({b[2]:,} to {b[1]:,} complaints) vs the previous 4 weeks."))
     dneg = neg_c - neg_p
     rel = pct_change(neg_c, neg_p)
@@ -454,7 +463,7 @@ def review_explorer():
         c3, c4 = st.columns(2)
         with c3:
             cat_opts = ["All categories"] + sorted(s["aspect"].dropna().unique().tolist())
-            cat = st.selectbox("Category", cat_opts, key="ex_cat")
+            cat = st.selectbox("Category", cat_opts, key="ex_cat", format_func=nice)
         with c4:
             order = st.selectbox("Sort", ["Newest first", "Oldest first", "Lowest rating first", "Highest rating first"],
                                  key="ex_sort")
@@ -491,7 +500,7 @@ def review_explorer():
         st.markdown(
             f'<div class="rcard"><div class="rmeta"><b style="color:#111827;">{int(row["rating"])} of 5 stars</b>'
             f'<span class="pill pill-grey">{htmllib.escape(lang_name)}</span>{sent_pill}'
-            f'<span class="pill pill-grey">{htmllib.escape(str(row["aspect"]))}</span>'
+            f'<span class="pill pill-grey">{htmllib.escape(nice(str(row["aspect"])))}</span>'
             f'<span style="margin-left:auto;">{date_txt}</span></div>'
             f'<div class="rtext">{highlight(row["text"], q)}</div></div>',
             unsafe_allow_html=True)
@@ -751,7 +760,7 @@ def about():
             h = head("Result: share of complaints by category",
                      f"Full weeks, negative reviews with a clear topic ({len(comp):,} complaints)")
             h += _tbl(["Category", "Share"],
-                      [[c.replace("&", "&amp;"), f"{v:.1f}%"] for c, v in shares.items()])
+                      [[nice(c).replace("&", "&amp;"), f"{v:.1f}%"] for c, v in shares.items()])
             st.markdown(card_html(h), unsafe_allow_html=True)
 
         h = head("What the clusters looked like")
