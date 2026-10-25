@@ -14,7 +14,9 @@ SHORT = {"Refunds & orders": CATS[0], "App problems": CATS[1], "Support": CATS[2
          "Delivery": CATS[3], "Pricing": CATS[4], "Food": CATS[5]}
 CAT_INFO = {
     CATS[0]: "Refunds not received, cancelled orders, wrong or missing items.",
-    CATS[1]: "App crashes, bugs, payment or login trouble, general complaints, fraud mentions, and some people comparing with other apps.",
+    CATS[1]: "Mostly general anger at the app and people saying they will switch to Zomato or other apps, plus "
+             "some complaints about the AI chat bot and a few about bugs, login or payment. Its phrases show it is "
+             "more a 'general complaints' group than a technical one.",
     CATS[2]: "Complaints about customer care and support.",
     CATS[3]: "Late or slow delivery, delivery partner issues.",
     CATS[4]: "High prices, extra charges, offers and coupons not working.",
@@ -71,11 +73,14 @@ def load():
 
 @st.cache_data
 def load_phrases():
-    if not os.path.exists("data/category_phrases_v3.csv"):
-        return None
-    p = pd.read_csv("data/category_phrases_v3.csv")
-    p["week_start"] = pd.to_datetime(p["week_start"])
-    return p
+    """Prefer the distinctive-phrase file (v4); fall back to the old frequency file (v3)."""
+    for version in ("v4", "v3"):
+        path = f"data/category_phrases_{version}.csv"
+        if os.path.exists(path):
+            p = pd.read_csv(path)
+            p["week_start"] = pd.to_datetime(p["week_start"])
+            return p, version
+    return None, None
 
 
 @st.cache_data
@@ -342,61 +347,78 @@ def category_detail():
     share_c = n_c / len(cur_all) * 100 if len(cur_all) else 0.0
     share_p = n_p / len(prv_all) * 100 if len(prv_all) else 0.0
 
+    # all scored reviews in each period, used to turn counts into a rate
+    scored = full[full["sentiment_pred"] != "not scored"]
+    n_scored_c = int(scored["week_start"].isin(last4).sum())
+    n_scored_p = int(scored["week_start"].isin(prev4).sum())
+    rate_c = n_c / n_scored_c * 1000 if n_scored_c else 0.0
+    rate_p = n_p / n_scored_p * 1000 if n_scored_p else 0.0
+
     k = st.columns(3)
     ch = pct_change(n_c, n_p)
     t, g = delta(ch, f"{abs(ch):.0f}%", False, 10)
     kpi(k[0], "Complaints, last 4 weeks", f"{n_c:,}", t, g)
-    t, g = delta(share_c - share_p, f"{abs(share_c - share_p):.1f} pts", None, 0.5)
-    kpi(k[1], "Share of all complaints with a topic", f"{share_c:.0f}%", t, g)
-    if n_c and n_p:
-        dr = cur["rating"].mean() - prv["rating"].mean()
-        t, g = delta(dr, f"{abs(dr):.2f}", True, 0.05)
-        rating_txt = f'{cur["rating"].mean():.2f}<span style="font-size:16px;color:#6b7280;"> / 5</span>'
-    else:
-        t, g, rating_txt = "Not enough reviews to compare", None, "n/a"
-    kpi(k[2], "Average star rating of these complaints", rating_txt, t, g)
+    rch = pct_change(rate_c, rate_p)
+    t, g = delta(rch, f"{abs(rch):.0f}%", False, 10)
+    kpi(k[1], "Complaints per 1,000 reviews", f"{rate_c:.0f}", t, g)
+    t, g = delta(share_c - share_p, f"{abs(share_c - share_p):.1f} pts", None, 1.0)
+    kpi(k[2], "Share of all topic complaints", f"{share_c:.0f}%", t, g)
 
     left, right = st.columns(2)
     with left:
         with st.container(border=True, key="card_c_trend"):
-            st.markdown(head(f"{choice}: complaints per week", "Negative reviews in this category, full weeks only"),
+            st.markdown(head(f"{choice}: complaints per week",
+                             "Negative reviews in this category, full weeks only. "
+                             "Dark bars = the last 4 weeks used in the numbers above."),
                         unsafe_allow_html=True)
             wk = comp[comp["aspect"] == cat].groupby("week_start").size().reset_index(name="complaints")
-            fig = px.bar(wk, x="week_start", y="complaints")
-            fig.update_traces(marker_color="#2563eb")
+            last4_ts = set(pd.to_datetime(list(last4)))
+            wk["period"] = ["Last 4 weeks" if w in last4_ts else "Earlier" for w in wk["week_start"]]
+            fig = px.bar(wk, x="week_start", y="complaints", color="period",
+                         color_discrete_map={"Last 4 weeks": "#2563eb", "Earlier": "#bfd0f5"})
             fig = style_fig(fig, 380)
-            fig.update_layout(yaxis_title="Complaints")
+            fig.update_layout(yaxis_title="Complaints", showlegend=False)
             st.plotly_chart(fig, use_container_width=True, theme=None)
 
     with right:
         h = head("What people say")
-        ph = load_phrases()
+        ph, version = load_phrases()
         if ph is None:
-            h += '<div class="small">Phrase file not found. Put <b>category_phrases_v3.csv</b> in the data folder.</div>'
+            h += '<div class="small">Phrase file not found. Put <b>category_phrases_v4.csv</b> in the data folder.</div>'
         else:
             sub = ph[(ph["aspect"] == cat) & (ph["week_start"].isin(pd.to_datetime(list(last4))))]
-            label = "Most common two-word phrases, last 4 weeks"
-            if sub.empty:
+            period = "last 4 weeks"
+            if sub["count"].sum() < 20:          # too thin for 4 weeks, fall back to all weeks
                 sub = ph[ph["aspect"] == cat]
-                label = "Most common two-word phrases, all weeks"
+                period = "all weeks (too few in the last 4 to show)"
             top = sub.groupby("phrase")["count"].sum().nlargest(8)
-            h += f'<div class="small">{label}</div>'
+            top = top[top >= 3]
+            if version == "v4":
+                h += (f'<div class="small">Phrases that set this category apart from the other complaints, '
+                      f'with the number of complaints mentioning each, {period}.</div>')
+            else:
+                h += f'<div class="small">Most common two-word phrases, {period} (old phrase file).</div>'
             if top.empty:
-                h += '<div class="small">No phrases to show.</div>'
+                h += '<div class="small">Too few complaints in this category to show reliable phrases.</div>'
             else:
                 mx = top.max()
                 for phrase, cnt in top.items():
                     h += (f'<div class="row"><div style="width:45%;color:#111827;">{htmllib.escape(str(phrase))}</div>'
                           f'<div class="barbg"><div class="bar" style="width:{cnt / mx * 100:.0f}%;background:#b42318;"></div></div>'
                           f'<div style="width:50px;text-align:right;font-size:13px;color:#111827;">{int(cnt):,}</div></div>')
-                h += ('<div class="small">Counts only, no review text is stored. Phrases come from negative reviews in this category. '
-                      'They are most useful for Delivery, Pricing and Support. Refunds and App problems are mixed groups, '
-                      'so their phrases are rougher. Hinglish is not translated.</div>')
+                h += ('<div class="small">Counts only, no review text is stored. Each phrase is counted once per review. '
+                      'Hinglish is not translated.</div>')
         st.markdown(card_html(h), unsafe_allow_html=True)
 
+    n_no_topic_c = int(((full["aspect"] == "No clear topic") & full["week_start"].isin(last4)).sum())
     st.markdown(card_html(head("What this category covers") +
-                          f'<div class="small">{htmllib.escape(CAT_INFO[cat])} Categories come from topic modelling on longer '
-                          'reviews, plus a classifier for short complaints, and were not fully validated.</div>'),
+                          f'<div class="small">{htmllib.escape(CAT_INFO[cat])}</div>'
+                          '<div class="small" style="margin-top:6px;"><b>How to read the numbers.</b> '
+                          'Complaints per 1,000 reviews adjusts for how many reviews came in, so it shows whether this '
+                          'problem is really growing or the app just got more reviews. Share of all topic complaints '
+                          f'leaves out {n_no_topic_c:,} short complaints in the last 4 weeks that name no topic '
+                          '("worst", "bad", "waste"). Categories come from topic modelling on longer reviews plus a '
+                          'classifier for short complaints, and were not fully validated.</div>'),
                 unsafe_allow_html=True)
 
 
@@ -571,7 +593,8 @@ def about():
                 "<b>No stemming or lemmatizing.</b> Character n-grams already absorb spelling variants "
                 "(bhot, bohot, bahut), and an English stemmer would damage Hinglish words.",
                 "<b>No translation or transliteration.</b> The models read Hinglish as written.",
-                "<b>No stop-word removal</b> for the models. It only matters for the phrase counts shown on Category detail.",
+                "<b>No stop-word removal</b> for the models. It is used only when picking the phrases shown on "
+                "Category detail, and there negations (no, not) are kept so no refund and not received survive.",
             ])
             st.markdown(card_html(h), unsafe_allow_html=True)
 
@@ -734,7 +757,23 @@ def about():
             "App problems and fraud.",
             "<b>Hinglish:</b> 871 of 1,337 Hinglish reviews fell into one cluster, so they were re-clustered. "
             "About 680 of them (roughly half) got a topic that could be trusted. The rest are marked Other / unclear.",
-            "<b>Phrases:</b> the Category detail page counts the most common two-word phrases per category and week.",
+        ])
+        st.markdown(card_html(h), unsafe_allow_html=True)
+
+        h = head("How the phrases on Category detail are picked",
+                 "Two-word phrases from negative reviews only, rebuilt in category_phrases_v4.csv")
+        h += _bullets([
+            "<b>Counted once per review.</b> A long review that repeats a phrase still counts once.",
+            "<b>Ranked by how distinctive they are, not how common.</b> Each phrase's share of reviews in a "
+            "category is compared with its share in the other five (a smoothed log-odds ratio as a z-score). "
+            "Phrases every complaint uses, such as delivery partner or ordered food, score near zero and drop out.",
+            "<b>One category per phrase.</b> A phrase is shown only where it is most distinctive, so customer "
+            "support appears under Support and not also under Refunds.",
+            "<b>Filler removed.</b> Phrases that only name the service (food delivery, order food) or only "
+            "express a feeling (extremely disappointed, disappointing experience) are dropped. Negations such as "
+            "no refund and not received are kept.",
+            "<b>Limits:</b> phrases need at least 8 reviews over all weeks, so small categories such as Food quality "
+            "show only a few. Hinglish phrases appear as written, without translation.",
         ])
         st.markdown(card_html(h), unsafe_allow_html=True)
 
