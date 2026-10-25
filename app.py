@@ -18,7 +18,7 @@ CAT_INFO = {
     CATS[2]: "Complaints about customer care and support.",
     CATS[3]: "Late or slow delivery, delivery partner issues.",
     CATS[4]: "High prices, extra charges, offers and coupons not working.",
-    CATS[5]: "Reviews that talk about food quality and taste. This group includes some praise, so its average rating is higher than the others.",
+    CATS[5]: "Reviews that talk about food quality and taste. The full group also contains praise, so only its negative reviews are counted as complaints here.",
 }
 LANG_LABEL = {"english": "English", "hinglish": "Hinglish", "hindi_script": "Hindi"}
 
@@ -101,6 +101,13 @@ def pos_neg(x):
     return (s["sentiment_pred"] == "pos").mean() * 100, (s["sentiment_pred"] == "neg").mean() * 100
 
 
+def complaints(d):
+    """Reviews that are a real complaint: in one of the 6 categories AND predicted negative.
+    Without the sentiment filter, praise inside a category (e.g. Food quality is ~57% positive)
+    would be counted as a complaint."""
+    return d[d["aspect"].isin(CATS) & (d["sentiment_pred"] == "neg")]
+
+
 def delta(d, mag_text, higher_is_good=None, thresh=0.0):
     if abs(d) <= thresh:
         return "No real change vs previous 4 weeks", None
@@ -138,6 +145,17 @@ def style_fig(fig, height=330):
     fig.update_yaxes(rangemode="tozero", gridcolor="#eef0f3", automargin=True)
     fig.update_xaxes(automargin=True)
     return fig
+
+
+def change_cell(ch, old):
+    """Text and colour for the 'vs previous 4 weeks' column. Only moves of 10%+ get a colour."""
+    if old == 0:
+        return "new", "#6b7280"
+    if round(ch) == 0:
+        return "no change", "#6b7280"
+    colour = "#b42318" if ch >= 10 else ("#0b7a4b" if ch <= -10 else "#6b7280")
+    arrow = "▲" if ch > 0 else "▼"
+    return f"{arrow} {abs(ch):.0f}%", colour
 
 
 # ---------------- sidebar ----------------
@@ -184,34 +202,48 @@ def overview():
     t, g = delta(dn_, f"{abs(dn_):.0f}%", None, 1)
     kpi(k[1], "New reviews", f"{len(cur):,}", t, g)
     t, g = delta(pos_c - pos_p, f"{abs(pos_c - pos_p):.1f} pts", True, 0.5)
-    kpi(k[2], "Positive reviews", f"{pos_c:.0f}%", t, g)
+    kpi(k[2], "Positive reviews", f"{pos_c:.1f}%", t, g)
     t, g = delta(neg_c - neg_p, f"{abs(neg_c - neg_p):.1f} pts", False, 0.5)
-    kpi(k[3], "Negative reviews", f"{neg_c:.0f}%", t, g)
+    kpi(k[3], "Negative reviews", f"{neg_c:.1f}%", t, g)
 
-    cc = cur[cur["aspect"].isin(CATS)]["aspect"].value_counts()
-    cp = prv[prv["aspect"].isin(CATS)]["aspect"].value_counts()
+    # complaints = negative reviews with a topic (praise inside a category is NOT counted)
+    comp_c, comp_p = complaints(cur), complaints(prv)
+    cc, cp = comp_c["aspect"].value_counts(), comp_p["aspect"].value_counts()
+    tot_c, tot_p = len(comp_c), len(comp_p)
     rows = []
     for c in CATS:
         cnt, old = int(cc.get(c, 0)), int(cp.get(c, 0))
         rows.append((c, cnt, old, pct_change(cnt, old)))
     rows.sort(key=lambda r: -r[1])
-    mx = max(r[1] for r in rows) or 1
 
     mid_l, mid_r = st.columns(2)
     with mid_l:
-        h = head("Complaints by category", "Reviews with a clear complaint topic, and the change vs the previous 4 weeks")
+        tot_txt, tot_col = change_cell(pct_change(tot_c, tot_p), tot_p)
+        h = head("Complaints by category",
+                 f"<b>{tot_c:,}</b> negative reviews with a clear topic in the last 4 weeks "
+                 f'(<span style="color:{tot_col};">{tot_txt}</span> vs the previous 4 weeks)')
+        # column headers
+        h += ('<div class="row" style="margin:10px 0 2px 0;">'
+              '<div style="width:38%;"></div>'
+              '<div class="small" style="flex:1;">Share of complaints</div>'
+              '<div class="small" style="width:44px;"></div>'
+              '<div class="small" style="width:92px;text-align:right;">vs prev 4 weeks</div></div>')
         for name, cnt, old, ch in rows:
-            colour = "#b42318" if ch >= 10 else ("#0b7a4b" if ch <= -10 else "#6b7280")
-            arrow = "▲" if ch > 0 else "▼"
-            h += (f'<div class="row"><div style="width:42%;"><b style="color:#111827;">{name.replace("&", "&amp;")}</b>'
-                  f'<div class="small">{cnt:,} reviews</div></div>'
-                  f'<div class="barbg"><div class="bar" style="width:{cnt / mx * 100:.0f}%;background:{colour};"></div></div>'
-                  f'<div style="width:70px;text-align:right;color:{colour};font-size:13px;">{arrow} {abs(ch):.0f}%</div></div>')
-        h += '<div class="small">Red = rising 10%+, green = falling 10%+. Smaller moves are often normal weekly noise.</div>'
+            share = cnt / tot_c * 100 if tot_c else 0
+            ch_txt, ch_col = change_cell(ch, old)
+            h += (f'<div class="row"><div style="width:38%;"><b style="color:#111827;">{name.replace("&", "&amp;")}</b>'
+                  f'<div class="small">{cnt:,} complaints</div></div>'
+                  f'<div class="barbg"><div class="bar" style="width:{share:.1f}%;background:#2563eb;"></div></div>'
+                  f'<div style="width:44px;text-align:right;font-size:14px;font-weight:600;color:#111827;">{share:.0f}%</div>'
+                  f'<div style="width:92px;text-align:right;color:{ch_col};font-size:13px;">{ch_txt}</div></div>')
+        h += ('<div class="small">Bars add up to 100% of complaints with a topic. In the last column, red = up 10% or more, '
+              'green = down 10% or more, grey = a smaller move, which is often normal weekly noise. '
+              'Only negative reviews are counted, so praise about food is not shown as a complaint.</div>')
         st.markdown(card_html(h), unsafe_allow_html=True)
     with mid_r:
         with st.container(border=True, key="card_trend"):
-            st.markdown(head("Negative reviews by week", "Share of scored reviews that are negative, full weeks only"),
+            st.markdown(head("Negative reviews by week",
+                             "Share of scored reviews that are negative, all full weeks (not just the last 4)"),
                         unsafe_allow_html=True)
             s = dl[dl["sentiment_pred"] != "not scored"]
             wk = (s.groupby("week_start")
@@ -225,27 +257,32 @@ def overview():
             st.plotly_chart(fig, use_container_width=True, theme=None)
 
     items = []
-    big = [r for r in rows if r[1] >= 80]
+    big = [r for r in rows if r[1] >= 80 and r[2] > 0]
     if big:
         w = max(big, key=lambda r: r[3])
         if w[3] >= 15:
             items.append(("Needs attention", "pill-red", f"{w[0]} complaints are rising",
-                          f"Up {w[3]:.0f}% ({w[2]:,} to {w[1]:,} reviews) vs the previous 4 weeks."))
+                          f"Up {w[3]:.0f}% ({w[2]:,} to {w[1]:,} complaints) vs the previous 4 weeks."))
         elif w[3] >= 5:
             items.append(("Watch", "pill-yellow", f"{w[0]} complaints are creeping up",
-                          f"Up {w[3]:.0f}% ({w[2]:,} to {w[1]:,} reviews) vs the previous 4 weeks."))
+                          f"Up {w[3]:.0f}% ({w[2]:,} to {w[1]:,} complaints) vs the previous 4 weeks."))
         b = min(big, key=lambda r: r[3])
         if b[3] <= -10:
             items.append(("Healthy", "pill-green", f"{b[0]} complaints are falling",
-                          f"Down {abs(b[3]):.0f}% ({b[2]:,} to {b[1]:,} reviews) vs the previous 4 weeks."))
+                          f"Down {abs(b[3]):.0f}% ({b[2]:,} to {b[1]:,} complaints) vs the previous 4 weeks."))
     dneg = neg_c - neg_p
-    if abs(dneg) >= 1:
+    rel = pct_change(neg_c, neg_p)
+    if abs(rel) >= 10:          # same 10% rule as the category panel
         up = dneg > 0
         items.append(("Needs attention" if up else "Healthy", "pill-red" if up else "pill-green",
                       f"Negative reviews are {'up' if up else 'down'}",
-                      f"{neg_p:.0f}% to {neg_c:.0f}% of scored reviews, a change of {abs(dneg):.1f} pts."))
+                      f"{neg_p:.1f}% to {neg_c:.1f}% of scored reviews ({abs(dneg):.1f} pts)."))
+    elif abs(dneg) >= 0.5:
+        items.append(("Stable", "pill-grey", "Negative share is roughly stable",
+                      f"{neg_p:.1f}% to {neg_c:.1f}% of scored reviews ({abs(dneg):.1f} pts), "
+                      f"a {abs(rel):.0f}% move, within normal noise."))
     if not items:
-        items.append(("Healthy", "pill-green", "Nothing unusual", "No big changes vs the previous 4 weeks."))
+        items.append(("Stable", "pill-grey", "Nothing unusual", "No big changes vs the previous 4 weeks."))
 
     bot_l, bot_r = st.columns(2)
     with bot_l:
@@ -255,26 +292,30 @@ def overview():
                   f'<div><b style="color:#111827;">{title.replace("&", "&amp;")}</b><div class="small">{text}</div></div></div>')
         st.markdown(card_html(h), unsafe_allow_html=True)
     with bot_r:
-        ca = full[full["week_start"].isin(last4) & full["language"].isin(LANG_LABEL.keys())]
+        cur_all = full[full["week_start"].isin(last4)]
+        ca = cur_all[cur_all["language"].isin(LANG_LABEL.keys())]
+        n_emoji = int((cur_all["language"] == "emoji_only").sum())
         colours = {"english": "#1d4ed8", "hinglish": "#6b8ff0", "hindi_script": "#bcd0fb"}
         bar, table = "", ""
         for lg, label in LANG_LABEL.items():
             sub = ca[ca["language"] == lg]
             share = len(sub) / len(ca) * 100 if len(ca) else 0
+            share_txt = f"{share:.1f}%" if share < 10 else f"{share:.0f}%"
             p_, n_ = pos_neg(sub)
             bar += f'<div style="width:{share:.1f}%;background:{colours[lg]};height:12px;"></div>'
             table += (f'<tr><td style="color:#111827;"><span style="color:{colours[lg]};">■</span> {label}</td>'
-                      f'<td style="color:#111827;">{len(sub):,}</td><td style="color:#111827;">{share:.0f}%</td>'
+                      f'<td style="color:#111827;">{len(sub):,}</td><td style="color:#111827;">{share_txt}</td>'
                       f'<td style="color:#0b7a4b;">{p_:.0f}%</td><td style="color:#b42318;">{n_:.0f}%</td></tr>')
         h = head("Reviews by language", "Last 4 full weeks, all languages")
         h += (f'<div style="display:flex;border-radius:6px;overflow:hidden;margin:10px 0;">{bar}</div>'
               f'<table class="lang-table"><tr><th>Language</th><th>Reviews</th><th>Share</th><th>Positive</th><th>Negative</th></tr>{table}</table>'
-              '<div class="small" style="margin-top:8px;">Hinglish and Hindi reviews look more negative mostly because they are longer, '
+              f'<div class="small" style="margin-top:8px;">Plus {n_emoji:,} emoji-only reviews, which have no words to '
+              'tag or score. Hinglish and Hindi reviews look more negative mostly because they are longer, '
               'and long reviews are mostly complaints. Rows with few reviews can swing a lot.</div>')
         st.markdown(card_html(h), unsafe_allow_html=True)
 
-    st.markdown('<div class="small">Positive and negative come from a sentiment model (about 96% accurate on a 300-review test set; '
-                'the test labels were drafted by an AI assistant, not independently verified).</div>',
+    st.markdown('<div class="small">Positive and negative come from a sentiment model (96.5% accurate on 283 labelled '
+                'test reviews). See About this data for how the labels were made and the limits.</div>',
                 unsafe_allow_html=True)
 
 
@@ -292,7 +333,7 @@ def category_detail():
                       label_visibility="collapsed", key="cat_choice")
     cat = SHORT[choice]
 
-    comp = full[full["aspect"].isin(CATS)]
+    comp = complaints(full)
     cur_all = comp[comp["week_start"].isin(last4)]
     prv_all = comp[comp["week_start"].isin(prev4)]
     cur = cur_all[cur_all["aspect"] == cat]
@@ -303,8 +344,8 @@ def category_detail():
 
     k = st.columns(3)
     ch = pct_change(n_c, n_p)
-    t, g = delta(ch, f"{abs(ch):.0f}%", False, 5)
-    kpi(k[0], "Complaint reviews, last 4 weeks", f"{n_c:,}", t, g)
+    t, g = delta(ch, f"{abs(ch):.0f}%", False, 10)
+    kpi(k[0], "Complaints, last 4 weeks", f"{n_c:,}", t, g)
     t, g = delta(share_c - share_p, f"{abs(share_c - share_p):.1f} pts", None, 0.5)
     kpi(k[1], "Share of all complaints with a topic", f"{share_c:.0f}%", t, g)
     if n_c and n_p:
@@ -313,17 +354,18 @@ def category_detail():
         rating_txt = f'{cur["rating"].mean():.2f}<span style="font-size:16px;color:#6b7280;"> / 5</span>'
     else:
         t, g, rating_txt = "Not enough reviews to compare", None, "n/a"
-    kpi(k[2], "Average rating of these reviews", rating_txt, t, g)
+    kpi(k[2], "Average star rating of these complaints", rating_txt, t, g)
 
     left, right = st.columns(2)
     with left:
         with st.container(border=True, key="card_c_trend"):
-            st.markdown(head(f"{choice}: complaint reviews per week", "Full weeks only"), unsafe_allow_html=True)
-            wk = full[full["aspect"] == cat].groupby("week_start").size().reset_index(name="reviews")
-            fig = px.bar(wk, x="week_start", y="reviews")
+            st.markdown(head(f"{choice}: complaints per week", "Negative reviews in this category, full weeks only"),
+                        unsafe_allow_html=True)
+            wk = comp[comp["aspect"] == cat].groupby("week_start").size().reset_index(name="complaints")
+            fig = px.bar(wk, x="week_start", y="complaints")
             fig.update_traces(marker_color="#2563eb")
             fig = style_fig(fig, 380)
-            fig.update_layout(yaxis_title="Reviews")
+            fig.update_layout(yaxis_title="Complaints")
             st.plotly_chart(fig, use_container_width=True, theme=None)
 
     with right:
@@ -432,9 +474,6 @@ def review_explorer():
 
 
 # ---------------- page 4: about ----------------
-# ---------------- page 4: about (replace your old about() with this whole block) ----------------
-# Uses helpers that already exist in app.py: card_html, head, htmllib, st
-
 ABOUT_CSS = """<style>
 .flow {display:flex; align-items:stretch; gap:8px; flex-wrap:wrap; margin:10px 0;}
 .node {flex:1; min-width:170px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:10px; padding:10px 12px;}
@@ -510,7 +549,8 @@ def about():
               'Review explorer read those files. No model runs when you open the app.</div></div>'
               '</div>')
         h += _callout("Links between the steps: the language tag decides how topics are grouped (Hinglish reviews are "
-                      "clustered on their own), and emoji-only reviews skip sentiment and topics.")
+                      "clustered on their own), and emoji-only reviews skip sentiment and topics. A complaint on the "
+                      "Overview and Category pages is a review with a category AND a negative sentiment prediction.")
         st.markdown(card_html(h), unsafe_allow_html=True)
 
         c1, c2 = st.columns(2)
@@ -677,15 +717,14 @@ def about():
                   'waste have no topic, and version 1 forced them into Support. The extra class fixed most of that.</div>')
             st.markdown(card_html(h), unsafe_allow_html=True)
         with r:
-            h = head("Result: share of complaints by category", "Full weeks, reviews with a clear topic")
-            h += _tbl(["Category", "Share"], [
-                ["Refunds, cancellations &amp; order problems", "29.8%"],
-                ["App problems &amp; general complaints", "23.5%"],
-                ["Customer service &amp; support", "15.5%"],
-                ["Delivery", "12.7%"],
-                ["Pricing &amp; charges", "11.0%"],
-                ["Food quality", "7.4%"],
-            ])
+            full, _ = full_weeks()
+            comp = complaints(full)
+            shares = comp["aspect"].value_counts(normalize=True).reindex(CATS).fillna(0) * 100
+            shares = shares.sort_values(ascending=False)
+            h = head("Result: share of complaints by category",
+                     f"Full weeks, negative reviews with a clear topic ({len(comp):,} complaints)")
+            h += _tbl(["Category", "Share"],
+                      [[c.replace("&", "&amp;"), f"{v:.1f}%"] for c, v in shares.items()])
             st.markdown(card_html(h), unsafe_allow_html=True)
 
         h = head("What the clusters looked like")
@@ -714,8 +753,10 @@ def about():
             "<b>Star-based training labels:</b> stars and hand labels agreed on 95% of reviews, "
             "so some training labels are wrong.",
             "<b>Topics only cover part of the data:</b> long reviews get a topic from clustering and short reviews "
-            "only if they are negative. Long-review categories can include some praise "
-            "(Food quality is about 57% positive).",
+            "only if they are negative. Complaint counts use negative reviews only, because the categories "
+            "themselves include some praise (Food quality is about 57% positive).",
+            "<b>Complaint counts depend on the sentiment model:</b> it misses a few real complaints, "
+            "so category counts are slightly low.",
             "<b>Short-review topic accuracy:</b> the final model was trained on the same 120 reviews used for the "
             "82% check, so there is no clean held-out score for it.",
             "<b>Hinglish topics:</b> only about half are reliable.",
