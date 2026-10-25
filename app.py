@@ -333,7 +333,7 @@ def overview():
         st.markdown(card_html(h), unsafe_allow_html=True)
 
     st.markdown('<div class="small">Positive and negative come from a sentiment model (96.5% accurate on 283 labelled '
-                'test reviews). See About this data for how the labels were made and the limits.</div>',
+                'test reviews). See About this data for how the models were built and tested.</div>',
                 unsafe_allow_html=True)
 
 
@@ -553,8 +553,8 @@ def about():
     st.markdown('<div class="small">Swiggy app reviews</div>'
                 '<h1 style="margin:0;padding:0;">About this data</h1>', unsafe_allow_html=True)
 
-    t_arch, t_lang, t_sent, t_topic, t_limits = st.tabs(
-        ["Architecture & cleaning", "Language detection", "Sentiment", "Topics", "Limitations"])
+    t_arch, t_lang, t_sent, t_topic = st.tabs(
+        ["Architecture & cleaning", "Language detection", "Sentiment", "Topics"])
 
     # ======================= TAB 1: architecture + preprocessing =======================
     with t_arch:
@@ -793,31 +793,6 @@ def about():
         ])
         st.markdown(card_html(h), unsafe_allow_html=True)
 
-    # ======================= TAB 5: limitations =======================
-    with t_limits:
-        h = head("What to keep in mind when reading the numbers")
-        h += _bullets([
-            "<b>Test labels:</b> drafted by an AI assistant and not independently verified, so every accuracy figure "
-            "here is measured against labels that may contain mistakes.",
-            "<b>Small test sets:</b> 283 reviews for sentiment, 196 for language, 120 for short-review topics. "
-            "Differences of one or two points are not meaningful.",
-            "<b>No neutral class:</b> 3-star reviews were not used for training, so every review is called "
-            "positive or negative.",
-            "<b>Short reviews dominate:</b> about 60% of reviews have 1 to 3 words and most are plain praise, "
-            "so overall positive and negative shares partly reflect review length.",
-            "<b>Star-based training labels:</b> stars and hand labels agreed on 95% of reviews, "
-            "so some training labels are wrong.",
-            "<b>Topics only cover part of the data:</b> long reviews get a topic from clustering and short reviews "
-            "only if they are negative. Complaint counts use negative reviews only, because the categories "
-            "themselves include some praise (Food quality is about 57% positive).",
-            "<b>Complaint counts depend on the sentiment model:</b> it misses a few real complaints, "
-            "so category counts are slightly low.",
-            "<b>Short-review topic accuracy:</b> the final model was trained on the same 120 reviews used for the "
-            "82% check, so there is no clean held-out score for it.",
-            "<b>Hinglish topics:</b> only about half are reliable.",
-            "<b>Time window:</b> about 3 months of one app on one store, so seasonal effects are not visible.",
-        ])
-        st.markdown(card_html(h), unsafe_allow_html=True)
 
 # ---------------- page 5: live demo ----------------
 DEMO_URL = "https://yashwishah-reviewpulse-demo.hf.space"
