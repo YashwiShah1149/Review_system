@@ -254,7 +254,7 @@ def overview():
                   f'<div class="barbg"><div class="bar" style="width:{share:.1f}%;background:#2563eb;"></div></div>'
                   f'<div style="width:44px;text-align:right;font-size:14px;font-weight:600;color:#111827;">{share:.0f}%</div>'
                   f'<div style="width:92px;text-align:right;color:{ch_col};font-size:13px;">{ch_txt}</div></div>')
-        h += ('<div class="small">Bars add up to 100% of complaints with a topic. In the last column, red = up 10% or more, '
+        h += ('<div class="small">Bars add up to 100% of complaints with a category. In the last column, red = up 10% or more, '
               'green = down 10% or more, grey = a smaller move, which is often normal weekly noise. '
               'Only negative reviews are counted, so praise about food is not shown as a complaint.</div>')
         st.markdown(card_html(h), unsafe_allow_html=True)
@@ -375,7 +375,7 @@ def category_detail():
     t, g = delta(rch, f"{abs(rch):.0f}%", False, 10)
     kpi(k[1], "Complaints per 1,000 reviews", f"{rate_c:.0f}", t, g)
     t, g = delta(share_c - share_p, f"{abs(share_c - share_p):.1f} pts", None, 1.0)
-    kpi(k[2], "Share of all topic complaints", f"{share_c:.0f}%", t, g)
+    kpi(k[2], "Share of all categorised complaints", f"{share_c:.0f}%", t, g)
 
     left, right = st.columns(2)
     with left:
@@ -428,8 +428,8 @@ def category_detail():
                           f'<div class="small">{htmllib.escape(CAT_INFO[cat])}</div>'
                           '<div class="small" style="margin-top:6px;"><b>How to read the numbers.</b> '
                           'Complaints per 1,000 reviews adjusts for how many reviews came in, so it shows whether this '
-                          'problem is really growing or the app just got more reviews. Share of all topic complaints '
-                          f'leaves out {n_no_topic_c:,} short complaints in the last 4 weeks that name no topic '
+                          'problem is really growing or the app just got more reviews. Share of all categorised complaints '
+                          f'leaves out {n_no_topic_c:,} short complaints in the last 4 weeks that name no category '
                           '("worst", "bad", "waste"). Categories come from topic modelling on longer reviews plus a '
                           'classifier for short complaints, and were not fully validated.</div>'),
                 unsafe_allow_html=True)
@@ -554,7 +554,7 @@ def about():
                 '<h1 style="margin:0;padding:0;">About this data</h1>', unsafe_allow_html=True)
 
     t_arch, t_lang, t_sent, t_topic = st.tabs(
-        ["Architecture & cleaning", "Language detection", "Sentiment", "Topics"])
+        ["Architecture & cleaning", "Language detection", "Sentiment", "Categories"])
 
     # ======================= TAB 1: architecture + preprocessing =======================
     with t_arch:
@@ -575,7 +575,7 @@ def about():
               '<div class="branch b2"><div class="t">2. Sentiment</div><div class="d">TF-IDF on character n-grams '
               'plus logistic regression, trained on star ratings.<br>'
               '<b style="color:#111827;">Adds:</b> positive or negative, and a negative probability</div></div>'
-              '<div class="branch b3"><div class="t">3. Topics</div><div class="d">MiniLM sentence embeddings, '
+              '<div class="branch b3"><div class="t">3. Categories</div><div class="d">MiniLM sentence embeddings, '
               'KMeans clusters for long reviews, a small classifier for short complaints.<br>'
               '<b style="color:#111827;">Adds:</b> complaint category</div></div>'
               '</div>')
@@ -586,8 +586,8 @@ def about():
               '<div class="node"><div class="t">Streamlit app</div><div class="d">Overview, Category detail and '
               'Review explorer read those files. No model runs when you open the app.</div></div>'
               '</div>')
-        h += _callout("Links between the steps: the language tag decides how topics are grouped (Hinglish reviews are "
-                      "clustered on their own), and emoji-only reviews skip sentiment and topics. A complaint on the "
+        h += _callout("Links between the steps: the language tag decides how categories are found (Hinglish reviews are "
+                      "clustered on their own), and emoji-only reviews skip sentiment and categories. A complaint on the "
                       "Overview and Category pages is a review with a category AND a negative sentiment prediction.")
         st.markdown(card_html(h), unsafe_allow_html=True)
 
@@ -622,7 +622,7 @@ def about():
             "That gave 23,538 training reviews (12,022 negative, 11,516 positive).",
             "<b>No leaking:</b> the same text never sits in both training and validation (grouped split, 80/20), "
             "and none of the hand-labelled test reviews appear in training (0 overlaps found).",
-            "<b>Hand-labelled checks:</b> 196 reviews for language, 300 for sentiment, 120 and 300 for short-review topics.",
+            "<b>Hand-labelled checks:</b> 196 reviews for language, 300 for sentiment, 120 and 300 for short-review categories.",
             "<b>Privacy:</b> the Review explorer sample has emails, phone numbers, long ids and @handles masked.",
         ])
         st.markdown(card_html(h), unsafe_allow_html=True)
@@ -652,7 +652,7 @@ def about():
                 "<b>Rule:</b> Hinglish if it finds 3+ Hindi words and they make up 20%+ of the review. "
                 "Emoji and symbols are ignored when counting.",
                 "<b>Devanagari script</b> (Hindi letters) is tagged by a regex.",
-                "<b>Emoji-only</b> reviews are tagged separately and skip sentiment and topics.",
+                "<b>Emoji-only</b> reviews are tagged separately and skip sentiment and categories.",
             ])
             st.markdown(card_html(h), unsafe_allow_html=True)
 
@@ -730,7 +730,7 @@ def about():
 
     # ======================= TAB 4: topic modelling =======================
     with t_topic:
-        h = head("Two stages: find the topics, then label the short reviews")
+        h = head("Two stages: find the categories with topic modelling, then label the short reviews")
         h += ('<div class="flow">'
               '<div class="node"><div class="t">Embed</div><div class="d">paraphrase-multilingual-MiniLM-L12-v2 '
               'turns each review into 384 numbers. 14,397 reviews with 4+ words.</div></div><div class="arrow">→</div>'
@@ -753,7 +753,7 @@ def about():
             ], hl=1)
             h += ('<div class="small" style="margin-top:8px;">Version 1 scored 92% on long reviews, but that mostly '
                   'measures how well it copies the KMeans labels, so it was not trusted. Words like worst, poor and '
-                  'waste have no topic, and version 1 forced them into Support. The extra class fixed most of that.</div>')
+                  'waste have no category, and version 1 forced them into Support. The extra class fixed most of that.</div>')
             st.markdown(card_html(h), unsafe_allow_html=True)
         with r:
             full, _ = full_weeks()
@@ -772,7 +772,7 @@ def about():
             "<b>Overlapping:</b> Refund and support complaints (merged into one category), "
             "App problems and fraud.",
             "<b>Hinglish:</b> 871 of 1,337 Hinglish reviews fell into one cluster, so they were re-clustered. "
-            "About 680 of them (roughly half) got a topic that could be trusted. The rest are marked Other / unclear.",
+            "About 680 of them (roughly half) got a category that could be trusted. The rest are marked Other / unclear.",
         ])
         st.markdown(card_html(h), unsafe_allow_html=True)
 
@@ -803,7 +803,7 @@ def live_demo():
     st.markdown('<div class="small">Swiggy app · try it yourself</div>'
                 '<h1 style="margin:0;padding:0;">Live demo</h1>', unsafe_allow_html=True)
     st.markdown('<div class="small">Type a review in English, Hinglish or Hindi and watch it go through the same '
-                'cleaning, language, sentiment and topic steps. The first load can take a minute while the demo wakes up.</div>',
+                'cleaning, language, sentiment and category steps. The first load can take a minute while the demo wakes up.</div>',
                 unsafe_allow_html=True)
     st.markdown(f'<a href="{DEMO_URL}" target="_blank" style="display:inline-block;padding:8px 16px;'
                 'margin:8px 0 12px 0;background:#2563eb;color:#ffffff;border-radius:8px;text-decoration:none;'
