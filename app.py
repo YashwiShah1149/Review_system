@@ -71,8 +71,7 @@ def load():
     return d
 
 
-@st.cache_data
-def load_phrases():
+def load_phrases():          # NOT cached, so a newly uploaded file is noticed
     """Prefer the distinctive-phrase file (v4); fall back to the old frequency file (v3)."""
     for version in ("v4", "v3"):
         path = f"data/category_phrases_{version}.csv"
@@ -82,10 +81,11 @@ def load_phrases():
 
 
 @st.cache_data
-def _read_phrases(path, _mtime_key):
+def _read_phrases(path, mtime):    # mtime makes the cache reset when the file changes
     p = pd.read_csv(path)
     p["week_start"] = pd.to_datetime(p["week_start"])
     return p
+
 
 @st.cache_data
 def load_sample():
